@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Water Quality - User View</title>
+
+    <!-- leaflet library - used for the interactive map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- chart.js library - used for the good/poor donut chart below -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #0D47A1, #1565C0, #0D47A1);
+            background-size: 400% 400%;
+            animation: gradientShift 10s ease infinite;
+            position: relative;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* bold, visible bubbles */
+        .bubble {
+            position: fixed;
+            bottom: -150px;
+            background: rgba(255, 255, 255, 0.5);
+            border: 2px solid rgba(255,255,255,0.7);
+            border-radius: 50%;
+            box-shadow: 0 0 25px rgba(255,255,255,0.6);
+            animation: rise linear infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @keyframes rise {
+            0%   { transform: translateY(0) translateX(0); opacity: 0; }
+            10%  { opacity: 1; }
+            90%  { opacity: 1; }
+            100% { transform: translateY(-120vh) translateX(40px); opacity: 0; }
+        }
+
+        .container, h1 {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* boxes need solid backgrounds now, since page bg is dark blue not light */
+        .summary-box, .legend, .alert-form, .treatment-box, .alerts-box {
+            background-color: rgba(255, 255, 255, 0.92) !important;
+        }
+        h1 {
+            color: white !important;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+                h1 { color: #0D47A1; } /* dark blue heading */
+
+                .container { max-width: 900px; margin: auto; }
+
+        select, button {
+            padding: 8px 12px;
+            font-size: 15px;
+            border-radius: 6px;
+            border: 1px solid #64B5F6;
+        }
+        button {
+            background-color: #1565C0;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover { background-color: #0D47A1; }
+
+        /* box showing the text summary for selected state */
+        .summary-box {
+            background-color: #E3F2FD;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            color: #0D47A1;
+            font-weight: bold;
+        }
+
+        /* legend showing what map dot colors mean */
+        .legend {
+            display: flex;
+            gap: 25px;
+            align-items: center;
+            background-color: #E3F2FD;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #0D47A1;
+        }
+        .dot {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        #map {
+            height: 450px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        /* alert submission form box at the bottom of the page */
+        .alert-form {
+            background-color: #E3F2FD;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .alert-form input, .alert-form textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 6px 0 14px 0;
+            border-radius: 6px;
+            border: 1px solid #64B5F6;
+            box-sizing: border-box;
+        }
+
+        /* shown briefly after an alert is successfully submitted */
+        .success-msg {
+            background-color: #90CAF9;
+            padding: 10px;
+            border-radius: 8px;
+            color: #0D47A1;
+            margin-bottom: 15px;
+        }
+        label {
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="bubble" style="left:5%; width:70px; height:70px; animation-duration:8s;"></div>
+    <div class="bubble" style="left:15%; width:45px; height:45px; animation-duration:6s; animation-delay:1s;"></div>
+    <div class="bubble" style="left:28%; width:90px; height:90px; animation-duration:10s; animation-delay:2s;"></div>
+    <div class="bubble" style="left:45%; width:55px; height:55px; animation-duration:7s; animation-delay:0.5s;"></div>
+    <div class="bubble" style="left:60%; width:80px; height:80px; animation-duration:9s;"></div>
+    <div class="bubble" style="left:75%; width:40px; height:40px; animation-duration:5s; animation-delay:3s;"></div>
+    <div class="bubble" style="left:88%; width:65px; height:65px; animation-duration:8s; animation-delay:1.5s;"></div>
+    <div class="container">
+        <h1>💧 Water Quality — Discover Your State</h1>
+
+        <!-- shows only right after a successful alert submission (redirect adds ?submitted=true to the URL) -->
+        {% if request.args.get('submitted') %}
+        <div class="success-msg">✅ Your alert was submitted. The authority will look into it shortly.</div>
+        {% endif %}
+
+        <!-- state dropdown - auto submits the form (reloads page) whenever a new state is picked -->
+        <form method="GET" action="/">
+            <label for="state">Select your state:</label>
+            <select name="state" id="state" onchange="this.form.submit()">
+                {% for s in states %}
+                <option value="{{ s }}" {% if s == selected_state %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </form>
+
+        <!-- text summary generated in app.py for the selected state -->
+        <div class="summary-box">{{ summary }}</div>
+
+        <!-- map dot color key -->
+        <div class="legend">
+            <span><span class="dot" style="background-color:#64B5F6;"></span> Good Water Quality</span>
+            <span><span class="dot" style="background-color:#FFD54F;"></span> Poor Water Quality</span>
+        </div>
+
+        <!-- donut chart canvas - filled in by the chart.js script near the bottom -->
+        <div style="max-width: 300px; margin: 20px auto;">
+            <canvas id="qualityChart"></canvas>
+        </div>
+
+        <div class="summary-box" style="margin-top: 25px;">
+            <h2 style="color:#0D47A1; margin-top:0;">🔧 Pipeline Leakage Overview</h2>
+            {% if high_risk_count > 0 %}
+            <p style="color:#0D47A1; font-weight:bold;">🚨 {{ high_risk_count }} pipelines flagged High Risk in {{ selected_state }}</p>
+            {% else %}
+            <p style="color:#0D47A1;">✅ No High Risk pipelines currently in {{ selected_state }}</p>
+            {% endif %}
+            <canvas id="userRiskChart" style="max-width: 400px; margin: 15px auto; display:block;"></canvas>
+        </div>
+
+        <!-- leaflet map gets built here via the script below -->
+        <div id="map"></div>
+
+        <!-- citizen alert submission form - posts to /submit_alert in app.py -->
+        <div class="alert-form">
+            <h2 style="color:#0D47A1;">🚨 Create a Water Alert</h2>
+            <p>Noticed a leak or bad water quality near you? Report it below.</p>
+            <form method="POST" action="/submit_alert">
+                <label>Location</label>
+                <input type="text" name="location" placeholder="e.g. Near Ranchi Bridge" required>
+
+                <label>Coordinates (optional)</label>
+                <input type="text" name="coordinates" placeholder="e.g. 23.61, 85.27">
+
+                <label>Describe the issue</label>
+                <textarea name="issue" rows="3" placeholder="e.g. Water leaking from main pipe near market" required></textarea>
+
+                <button type="submit">Submit Alert</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- map setup - builds the leaflet map and drops a colored pin per location in the selected state -->
+    <script>
+        var map = L.map('map').setView([
+            {{ locations[0]['Latitude'] if locations else 20 }},
+            {{ locations[0]['Longitude'] if locations else 78 }}
+        ], 6);
+
+        // english-only map tiles (no arabic/regional labels)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+
+        // one colored circle per location - light blue = good, dark blue = poor
+        {% for loc in locations %}
+        var color = "{{ '#1565C0' if loc['Water_Quality_Label'] == 'Poor' else '#64B5F6' }}";
+        L.circleMarker([{{ loc['Latitude'] }}, {{ loc['Longitude'] }}], {
+            radius: 9, color: color, fillColor: color, fillOpacity: 0.85, weight: 2
+        }).addTo(map).bindPopup(
+            "<b>{{ loc['Monitoring Location'] }}</b><br>Quality: {{ loc['Water_Quality_Label'] }}"
+        );
+        {% endfor %}
+    </script>
+
+    <!-- donut chart setup - good vs poor count for the selected state, values come from app.py -->
+    <script>
+        new Chart(document.getElementById('qualityChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Good', 'Poor'],
+                datasets: [{
+                    data: [{{ good_count }}, {{ poor_count }}],
+                    backgroundColor: ['#64B5F6', '#FFD54F'],  // changed Poor to a contrasting yellow/gold
+                    borderWidth: 2,
+                    borderColor: '#0D47A1'
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: { 
+                        position: 'bottom', 
+                        labels: { color: '#FFFFFF', font: { size: 13, weight: 'bold' } }  // white text
+                    },
+                    title: { 
+                        display: true, 
+                        text: '{{ selected_state }} — Water Quality Split', 
+                        color: '#FFFFFF',  // white text
+                        font: { size: 16, weight: 'bold' } 
+                    }
+                }
+            }
+        });
+    </script>
+
+    <!--------------------------leakage overview chart------------------------------------>
+    <script>
+        new Chart(document.getElementById('userRiskChart'), {
+            type: 'bar',
+            data: {
+                labels: ['Low Risk', 'Medium Risk', 'High Risk'],
+                datasets: [{
+                    data: [{{ risk_low }}, {{ risk_medium }}, {{ risk_high }}],
+                    backgroundColor: ['#64B5F6', '#42A5F5', '#FFD54F']
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: { display: false },
+                    title: { display: true, text: 'Pipeline Risk in {{ selected_state }}', color: '#FFFFFF', font: { weight: 'bold' } }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
