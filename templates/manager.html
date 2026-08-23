@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Water Management - Manager View</title>
+
+    <!-- leaflet library - used for the interactive map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- chart.js library - used for the bar chart and scatter chart below (was missing before, causing charts to not show) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #0D47A1, #1565C0, #0D47A1);
+            background-size: 400% 400%;
+            animation: gradientShift 10s ease infinite;
+            position: relative;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* bold, visible bubbles */
+        .bubble {
+            position: fixed;
+            bottom: -150px;
+            background: rgba(255, 255, 255, 0.5);
+            border: 2px solid rgba(255,255,255,0.7);
+            border-radius: 50%;
+            box-shadow: 0 0 25px rgba(255,255,255,0.6);
+            animation: rise linear infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @keyframes rise {
+            0%   { transform: translateY(0) translateX(0); opacity: 0; }
+            10%  { opacity: 1; }
+            90%  { opacity: 1; }
+            100% { transform: translateY(-120vh) translateX(40px); opacity: 0; }
+        }
+
+        .container, h1 {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* boxes need solid backgrounds now, since page bg is dark blue not light */
+        .summary-box, .legend, .alert-form, .treatment-box, .alerts-box {
+            background-color: rgba(255, 255, 255, 0.92) !important;
+        }
+        h1 {
+            color: white !important;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+                h1 { color: #0D47A1; } /* dark blue heading */
+
+                .container { max-width: 950px; margin: auto; }
+
+        select {
+            padding: 8px 12px;
+            font-size: 15px;
+            border-radius: 6px;
+            border: 1px solid #64B5F6;
+        }
+
+        /* box showing selected state's summary text */
+        .summary-box {
+            background-color: #E3F2FD;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            color: #0D47A1;
+            font-weight: bold;
+        }
+
+        /* legend showing what map dot colors mean */
+        .legend {
+            display: flex;
+            gap: 25px;
+            align-items: center;
+            background-color: #E3F2FD;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #0D47A1;
+        }
+        .dot {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        #map {
+            height: 450px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        /* box showing citizen-submitted alerts at the top of the page */
+        .alerts-box {
+            background-color: #E1F5FE;
+            border-left: 5px solid #1565C0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .alerts-box h2 { color: #1565C0; margin-top: 0; }
+        .alert-item {
+            background-color: white;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .no-alerts { color: #0D47A1; font-style: italic; }
+
+        /* used for both treatment recommendations box and leakage risk box */
+        .treatment-box {
+            background-color: #E3F2FD;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .treatment-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #90CAF9;
+        }
+        label {
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="bubble" style="left:5%; width:70px; height:70px; animation-duration:8s;"></div>
+    <div class="bubble" style="left:15%; width:45px; height:45px; animation-duration:6s; animation-delay:1s;"></div>
+    <div class="bubble" style="left:28%; width:90px; height:90px; animation-duration:10s; animation-delay:2s;"></div>
+    <div class="bubble" style="left:45%; width:55px; height:55px; animation-duration:7s; animation-delay:0.5s;"></div>
+    <div class="bubble" style="left:60%; width:80px; height:80px; animation-duration:9s;"></div>
+    <div class="bubble" style="left:75%; width:40px; height:40px; animation-duration:5s; animation-delay:3s;"></div>
+    <div class="bubble" style="left:88%; width:65px; height:65px; animation-duration:8s; animation-delay:1.5s;"></div>
+    <div class="container">
+        <h1>🛠️ Manager Dashboard — Water Management</h1>
+
+        <!-- citizen alerts section - reads from alerts.csv via app.py -->
+        <div class="alerts-box">
+            <h2>🚨 Citizen Alerts</h2>
+            {% if alerts %}
+                {% for a in alerts %}
+                <div class="alert-item">
+                    <b>{{ a['Location'] }}</b> — {{ a['Issue'] }}<br>
+                    <small>Coordinates: {{ a['Coordinates'] }} | Reported: {{ a['Timestamp'] }} | Status: {{ a['Status'] }}</small>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="no-alerts">No alerts submitted yet.</p>
+            {% endif %}
+        </div>
+
+        <!-- state dropdown - auto-submits the form when changed, reloading page for that state -->
+        <form method="GET" action="/manager">
+            <label for="state">Select state:</label>
+            <select name="state" id="state" onchange="this.form.submit()">
+                {% for s in states %}
+                <option value="{{ s }}" {% if s == selected_state %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </form>
+
+        <div class="summary-box">
+            {{ selected_state }} — {{ locations|length }} monitored locations
+        </div>
+
+        <!-- map dot color key -->
+        <div class="legend">
+            <span><span class="dot" style="background-color:#64B5F6;"></span> Good Water Quality</span>
+            <span><span class="dot" style="background-color:#1565C0;"></span> Poor Water Quality</span>
+        </div>
+
+
+        <!-- leaflet map gets built here via script at the bottom -->
+        <div id="map"></div>
+
+        <!-- treatment/dosage recommendations for each location in selected state -->
+        <div class="treatment-box">
+            <h2 style="color:#0D47A1;">💊 Treatment Recommendations</h2>
+            {% for loc in locations %}
+            <div class="treatment-item">
+                <span>{{ loc['Monitoring Location'] }} ({{ loc['Water_Quality_Label'] }})</span>
+                <span><b>{{ "%.1f"|format(loc['Recommended_Coagulant_Dosage']) }} mg/L</b></span>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- leakage/pipeline risk section - objective 2 data -->
+        <div class="treatment-box" style="margin-top: 25px;">
+            <h2 style="color:#0D47A1;">🔧 Pipeline Leakage Risk</h2>
+            {% if high_risk_count > 0 %}
+            <p style="color:#1565C0; font-weight:bold;">🚨 {{ high_risk_count }} pipeline readings flagged as High Risk</p>
+            {% endif %}
+            <!-- both charts render into these empty canvas tags via the script below -->
+            <canvas id="riskChart" style="max-width: 400px; margin: 15px auto; display:block;"></canvas>
+            <canvas id="scatterChart" style="margin-top: 20px;"></canvas>
+        </div>
+
+        <script>
+            // bar chart - how many readings fall into each risk level
+            new Chart(document.getElementById('riskChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Low Risk', 'Medium Risk', 'High Risk'],
+                    datasets: [{
+                        data: [{{ risk_low }}, {{ risk_medium }}, {{ risk_high }}],
+                        backgroundColor: ['#90CAF9', '#42A5F5', '#0D47A1']
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: true, text: 'Pipeline Risk Level Distribution', color: '#0D47A1' }
+                    }
+                }
+            });
+
+            // scatter chart - pressure vs flow, colored by risk level
+            // loops through each risk level, and within that, filters leak_data rows matching that level
+            new Chart(document.getElementById('scatterChart'), {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {% for level, color in [('Low Risk', '#90CAF9'), ('Medium Risk', '#42A5F5'), ('High Risk', '#0D47A1')] %}
+                        {
+                            label: '{{ level }}',
+                            data: [
+                                {% for row in leak_data %}
+                                {% if row['Risk_Level'] == level %}
+                                {x: {{ row['Pressure_psi'] }}, y: {{ row['Flow_Lmin'] }}},
+                                {% endif %}
+                                {% endfor %}
+                            ],
+                            backgroundColor: '{{ color }}'
+                        },
+                        {% endfor %}
+                    ]
+                },
+                options: {
+                    plugins: { title: { display: true, text: 'Pressure vs Flow by Risk Level', color: '#0D47A1' } },
+                    scales: {
+                        x: { title: { display: true, text: 'Pressure (psi)' } },
+                        y: { title: { display: true, text: 'Flow (L/min)' } }
+                    }
+                }
+            });
+        </script>
+    </div>
+
+    <!-- map setup - runs after the container div, builds the leaflet map and drops a colored pin per location -->
+    <script>
+        var map = L.map('map').setView([
+            {{ locations[0]['Latitude'] if locations else 20 }},
+            {{ locations[0]['Longitude'] if locations else 78 }}
+        ], 6);
+
+        // english-only map tiles (no arabic/regional labels)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+
+        // one colored circle per location - blue = good, dark blue = poor
+        {% for loc in locations %}
+        var color = "{{ '#1565C0' if loc['Water_Quality_Label'] == 'Poor' else '#64B5F6' }}";
+        L.circleMarker([{{ loc['Latitude'] }}, {{ loc['Longitude'] }}], {
+            radius: 9, color: color, fillColor: color, fillOpacity: 0.85, weight: 2
+        }).addTo(map).bindPopup(
+            "<b>{{ loc['Monitoring Location'] }}</b><br>Quality: {{ loc['Water_Quality_Label'] }}<br>Dosage: {{ '%.1f'|format(loc['Recommended_Coagulant_Dosage']) }} mg/L"
+        );
+        {% endfor %}
+    </script>
+</body>
+</html>
